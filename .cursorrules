@@ -1,0 +1,24 @@
+# Background Customizer
+
+Stack: Rust workspace, Tauri v2, Vite, React, TypeScript, Tailwind, shadcn/ui.
+Windows-first. Use React because the spec names shadcn/ui.
+
+## Crate layout
+
+- `crates/core` — config, profiles, monitor model (`serde`, `tokio`)
+- `crates/renderer` — per-monitor GPU surface (`wgpu`). Do not implement rendering until that milestone.
+- `crates/decoder` — image and video decode. Empty until that milestone.
+- `crates/shell` — Tauri v2 app: tray, settings window, autostart, IPC
+- `ui` — Vite + React + TypeScript + Tailwind + shadcn/ui. Frontend package, not a Cargo crate.
+- `crates/importer` — third-party wallpaper formats
+- `crates/bench` — benchmark harness
+
+Run `cargo tauri dev` from the repository root.
+
+## Rules
+
+- No `unwrap()` outside tests.
+- All OS calls go behind traits.
+- One milestone per commit.
+- Keep unsafe Win32 in one module.
+- Renderer release profile: `lto = "fat"`, `codegen-units = 1`, `panic = "abort"`, `opt-level = 3`.
