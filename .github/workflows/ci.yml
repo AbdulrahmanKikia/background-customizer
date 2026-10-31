@@ -26,3 +26,5 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace
+      - name: Idle CPU regression
+        run: cargo run -p bench --bin bc-bench -- check --baseline results/baselines.json --candidate results/latest.json
