@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Tauri shell for the settings window"
+description = "Tauri shell for the tray, settings window, and login autostart"
 
 [lib]
 name = "shell_lib"
@@ -18,7 +18,15 @@ path = "src/main.rs"
 tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
-tauri = { version = "2.12.5", features = [] }
+auto-launch = "0.6.0"
+tauri = { version = "2.12.5", features = ["tray-icon"] }
+tauri-plugin-single-instance = { version = "2.5.5", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [features]
 default = ["custom-protocol"]

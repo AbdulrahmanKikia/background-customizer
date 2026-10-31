@@ -22,7 +22,8 @@
         "title": "Settings",
         "width": 960,
         "height": 640,
-        "resizable": true
+        "resizable": true,
+        "skipTaskbar": true
       }
     ],
     "security": {
