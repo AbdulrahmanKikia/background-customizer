@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/AbdulrahmanKikia/background-customizer/results/schema.json",
+  "title": "Background Customizer benchmark results",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "recorded_at", "note", "targets"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "enum": ["baseline", "run"] },
+    "recorded_at": { "type": ["string", "null"] },
+    "note": { "type": "string" },
+    "targets": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/target" }
+    }
+  },
+  "$defs": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "reason", "scenarios"],
+      "properties": {
+        "id": {
+          "enum": ["wallpaper-engine", "lively", "background-customizer"]
+        },
+        "status": { "enum": ["missing", "recorded"] },
+        "reason": { "type": ["string", "null"] },
+        "scenarios": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/scenario" }
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "reason", "summary", "samples", "device_events", "notes"],
+      "properties": {
+        "id": {
+          "enum": [
+            "idle-static",
+            "h264-1080p30",
+            "hevc-av1-4k60",
+            "two-monitors",
+            "fullscreen-occlusion",
+            "hot-unplug"
+          ]
+        },
+        "status": { "enum": ["missing", "recorded"] },
+        "reason": { "type": ["string", "null"] },
+        "summary": { "$ref": "#/$defs/summary" },
+        "samples": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sample" }
+        },
+        "device_events": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/deviceEvent" }
+        },
+        "notes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpu_percent_mean",
+        "ram_bytes_mean",
+        "gpu_percent_mean",
+        "vram_bytes_mean",
+        "power_mw_mean",
+        "frame_time_ms_mean",
+        "dropped_frames",
+        "cold_start_ms",
+        "pause_latency_ms",
+        "resume_latency_ms"
+      ],
+      "properties": {
+        "cpu_percent_mean": { "type": ["number", "null"] },
+        "ram_bytes_mean": { "type": ["integer", "null"] },
+        "gpu_percent_mean": { "type": ["number", "null"] },
+        "vram_bytes_mean": { "type": ["integer", "null"] },
+        "power_mw_mean": { "type": ["number", "null"] },
+        "frame_time_ms_mean": { "type": ["number", "null"] },
+        "dropped_frames": { "type": ["integer", "null"] },
+        "cold_start_ms": { "type": ["integer", "null"] },
+        "pause_latency_ms": { "type": ["integer", "null"] },
+        "resume_latency_ms": { "type": ["integer", "null"] }
+      }
+    },
+    "sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "offset_ms",
+        "cpu_percent",
+        "ram_bytes",
+        "gpu_percent",
+        "vram_bytes",
+        "power_mw",
+        "frame_time_ms"
+      ],
+      "properties": {
+        "offset_ms": { "type": "integer", "minimum": 0 },
+        "cpu_percent": { "type": ["number", "null"] },
+        "ram_bytes": { "type": ["integer", "null"] },
+        "gpu_percent": { "type": ["number", "null"] },
+        "vram_bytes": { "type": ["integer", "null"] },
+        "power_mw": { "type": ["number", "null"] },
+        "frame_time_ms": { "type": ["number", "null"] }
+      }
+    },
+    "deviceEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "offset_ms"],
+      "properties": {
+        "kind": { "enum": ["monitor", "audio"] },
+        "offset_ms": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

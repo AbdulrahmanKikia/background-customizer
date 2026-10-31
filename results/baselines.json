@@ -1,0 +1,262 @@
+{
+  "schema_version": 1,
+  "kind": "baseline",
+  "recorded_at": null,
+  "note": "Placeholder baseline from Milestone 0.5. Null metrics mean the measurement was not taken. They are not zeros. PresentMon was not installed. CI compares idle-static cpu_percent_mean with results/latest.json when that candidate file exists, and fails only when the candidate is higher than a numeric baseline.",
+  "targets": [
+    {
+      "id": "wallpaper-engine",
+      "status": "missing",
+      "reason": "Wallpaper Engine is not installed on this machine (wallpaper64.exe was not found), so no baseline was recorded.",
+      "scenarios": [
+        {
+          "id": "idle-static",
+          "status": "missing",
+          "reason": "Wallpaper Engine is not installed on this machine (wallpaper64.exe was not found), so no baseline was recorded.",
+          "summary": {
+            "cpu_percent_mean": null,
+            "ram_bytes_mean": null,
+            "gpu_percent_mean": null,
+            "vram_bytes_mean": null,
+            "power_mw_mean": null,
+            "frame_time_ms_mean": null,
+            "dropped_frames": null,
+            "cold_start_ms": null,
+            "pause_latency_ms": null,
+            "resume_latency_ms": null
+          },
+          "samples": [],
+          "device_events": [],
+          "notes": []
+        },
+        {
+          "id": "h264-1080p30",
+          "status": "missing",
+          "reason": "Wallpaper Engine is not installed on this machine (wallpaper64.exe was not found), so no baseline was recorded.",
+          "summary": {
+            "cpu_percent_mean": null,
+            "ram_bytes_mean": null,
+            "gpu_percent_mean": null,
+            "vram_bytes_mean": null,
+            "power_mw_mean": null,
+            "frame_time_ms_mean": null,
+            "dropped_frames": null,
+            "cold_start_ms": null,
+            "pause_latency_ms": null,
+            "resume_latency_ms": null
+          },
+          "samples": [],
+          "device_events": [],
+          "notes": []
+        },
+        {
+          "id": "hevc-av1-4k60",
+          "status": "missing",
+          "reason": "Wallpaper Engine is not installed on this machine (wallpaper64.exe was not found), so no baseline was recorded.",
+          "summary": {
+            "cpu_percent_mean": null,
+            "ram_bytes_mean": null,
+            "gpu_percent_mean": null,
+            "vram_bytes_mean": null,
+            "power_mw_mean": null,
+            "frame_time_ms_mean": null,
+            "dropped_frames": null,
+            "cold_start_ms": null,
+            "pause_latency_ms": null,
+            "resume_latency_ms": null
+          },
+          "samples": [],
+          "device_events": [],
+          "notes": []
+        },
+        {
+          "id": "two-monitors",
+          "status": "missing",
+          "reason": "Wallpaper Engine is not installed on this machine (wallpaper64.exe was not found), so no baseline was recorded.",
+          "summary": {
+            "cpu_percent_mean": null,
+            "ram_bytes_mean": null,
+            "gpu_percent_mean": null,
+            "vram_bytes_mean": null,
+            "power_mw_mean": null,
+            "frame_time_ms_mean": null,
+            "dropped_frames": null,
+            "cold_start_ms": null,
+            "pause_latency_ms": null,
+            "resume_latency_ms": null
+          },
+          "samples": [],
+          "device_events": [],
+          "notes": []
+        },
+        {
+          "id": "fullscreen-occlusion",
+          "status": "missing",
+          "reason": "Wallpaper Engine is not installed on this machine (wallpaper64.exe was not found), so no baseline was recorded.",
+          "summary": {
+            "cpu_percent_mean": null,
+            "ram_bytes_mean": null,
+            "gpu_percent_mean": null,
+            "vram_bytes_mean": null,
+            "power_mw_mean": null,
+            "frame_time_ms_mean": null,
+            "dropped_frames": null,
+            "cold_start_ms": null,
+            "pause_latency_ms": null,
+            "resume_latency_ms": null
+          },
+          "samples": [],
+          "device_events": [],
+          "notes": []
+        },
+        {
+          "id": "hot-unplug",
+          "status": "missing",
+          "reason": "Wallpaper Engine is not installed on this machine (wallpaper64.exe was not found), so no baseline was recorded.",
+          "summary": {
+            "cpu_percent_mean": null,
+            "ram_bytes_mean": null,
+            "gpu_percent_mean": null,
+            "vram_bytes_mean": null,
+            "power_mw_mean": null,
+            "frame_time_ms_mean": null,
+            "dropped_frames": null,
+            "cold_start_ms": null,
+            "pause_latency_ms": null,
+            "resume_latency_ms": null
+          },
+          "samples": [],
+          "device_events": [],
+          "notes": []
+        }
+      ]
+    },
+    {
+      "id": "lively",
+      "status": "missing",
+      "reason": "Lively Wallpaper is not installed on this machine (Lively.exe was not found), so no baseline was recorded.",
+      "scenarios": [
+        {
+          "id": "idle-static",
+          "status": "missing",
+          "reason": "Lively Wallpaper is not installed on this machine (Lively.exe was not found), so no baseline was recorded.",
+          "summary": {
+            "cpu_percent_mean": null,
+            "ram_bytes_mean": null,
+            "gpu_percent_mean": null,
+            "vram_bytes_mean": null,
+            "power_mw_mean": null,
+            "frame_time_ms_mean": null,
+            "dropped_frames": null,
+            "cold_start_ms": null,
+            "pause_latency_ms": null,
+            "resume_latency_ms": null
+          },
+          "samples": [],
+          "device_events": [],
+          "notes": []
+        },
+        {
+          "id": "h264-1080p30",
+          "status": "missing",
+          "reason": "Lively Wallpaper is not installed on this machine (Lively.exe was not found), so no baseline was recorded.",
+          "summary": {
+            "cpu_percent_mean": null,
+            "ram_bytes_mean": null,
+            "gpu_percent_mean": null,
+            "vram_bytes_mean": null,
+            "power_mw_mean": null,
+            "frame_time_ms_mean": null,
+            "dropped_frames": null,
+            "cold_start_ms": null,
+            "pause_latency_ms": null,
+            "resume_latency_ms": null
+          },
+          "samples": [],
+          "device_events": [],
+          "notes": []
+        },
+        {
+          "id": "hevc-av1-4k60",
+          "status": "missing",
+          "reason": "Lively Wallpaper is not installed on this machine (Lively.exe was not found), so no baseline was recorded.",
+          "summary": {
+            "cpu_percent_mean": null,
+            "ram_bytes_mean": null,
+            "gpu_percent_mean": null,
+            "vram_bytes_mean": null,
+            "power_mw_mean": null,
+            "frame_time_ms_mean": null,
+            "dropped_frames": null,
+            "cold_start_ms": null,
+            "pause_latency_ms": null,
+            "resume_latency_ms": null
+          },
+          "samples": [],
+          "device_events": [],
+          "notes": []
+        },
+        {
+          "id": "two-monitors",
+          "status": "missing",
+          "reason": "Lively Wallpaper is not installed on this machine (Lively.exe was not found), so no baseline was recorded.",
+          "summary": {
+            "cpu_percent_mean": null,
+            "ram_bytes_mean": null,
+            "gpu_percent_mean": null,
+            "vram_bytes_mean": null,
+            "power_mw_mean": null,
+            "frame_time_ms_mean": null,
+            "dropped_frames": null,
+            "cold_start_ms": null,
+            "pause_latency_ms": null,
+            "resume_latency_ms": null
+          },
+          "samples": [],
+          "device_events": [],
+          "notes": []
+        },
+        {
+          "id": "fullscreen-occlusion",
+          "status": "missing",
+          "reason": "Lively Wallpaper is not installed on this machine (Lively.exe was not found), so no baseline was recorded.",
+          "summary": {
+            "cpu_percent_mean": null,
+            "ram_bytes_mean": null,
+            "gpu_percent_mean": null,
+            "vram_bytes_mean": null,
+            "power_mw_mean": null,
+            "frame_time_ms_mean": null,
+            "dropped_frames": null,
+            "cold_start_ms": null,
+            "pause_latency_ms": null,
+            "resume_latency_ms": null
+          },
+          "samples": [],
+          "device_events": [],
+          "notes": []
+        },
+        {
+          "id": "hot-unplug",
+          "status": "missing",
+          "reason": "Lively Wallpaper is not installed on this machine (Lively.exe was not found), so no baseline was recorded.",
+          "summary": {
+            "cpu_percent_mean": null,
+            "ram_bytes_mean": null,
+            "gpu_percent_mean": null,
+            "vram_bytes_mean": null,
+            "power_mw_mean": null,
+            "frame_time_ms_mean": null,
+            "dropped_frames": null,
+            "cold_start_ms": null,
+            "pause_latency_ms": null,
+            "resume_latency_ms": null
+          },
+          "samples": [],
+          "device_events": [],
+          "notes": []
+        }
+      ]
+    }
+  ]
+}
