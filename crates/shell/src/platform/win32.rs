@@ -5,25 +5,25 @@ use std::time::Duration;
 
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{
-    SetLastError, COLORREF, ERROR_CLASS_ALREADY_EXISTS, HINSTANCE, HWND, LPARAM, LRESULT, RECT,
-    WIN32_ERROR, WPARAM,
+    SetLastError, COLORREF, ERROR_CLASS_ALREADY_EXISTS, HINSTANCE, HWND, LPARAM, LRESULT, POINT,
+    RECT, WIN32_ERROR, WPARAM,
 };
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, FillRect, InvalidateRect, UpdateWindow,
-    HBRUSH, HDC, HGDIOBJ, PAINTSTRUCT,
+    GetMonitorInfoW, InvalidateRect, MonitorFromPoint, UpdateWindow, HBRUSH, MONITORINFO,
+    MONITOR_DEFAULTTOPRIMARY,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, FindWindowExW, FindWindowW, GetClientRect,
     GetParent, GetWindowLongPtrW, RegisterClassW, SendMessageTimeoutW, SetLayeredWindowAttributes,
-    SetParent, SetWindowLongPtrW, SetWindowPos, ShowWindow, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA,
-    GWL_EXSTYLE, GWL_STYLE, HCURSOR, HICON, LWA_ALPHA, SMTO_NORMAL, SWP_FRAMECHANGED,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_SHOWNOACTIVATE,
-    WM_ERASEBKGND, WM_PAINT, WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_APPWINDOW, WS_EX_LAYERED,
+    SetParent, SetWindowLongPtrW, SetWindowPos, ShowWindow, CS_HREDRAW, CS_VREDRAW, GWL_EXSTYLE,
+    GWL_STYLE, HCURSOR, HICON, LWA_ALPHA, SMTO_NORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_SHOWNOACTIVATE, WM_ERASEBKGND,
+    WM_PAINT, WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_APPWINDOW, WS_EX_LAYERED,
     WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_POPUP, WS_VISIBLE,
 };
 
-use crate::desktop::{choose_parent, Rgb, WallpaperParent};
+use crate::desktop::{choose_parent, DesktopSurface, WallpaperParent};
 use crate::lifecycle::TaskbarPresence;
 
 /// Progman creates the wallpaper `WorkerW` when it receives this message.
@@ -73,14 +73,27 @@ fn exstyle_without_taskbar(style: isize) -> Result<isize, String> {
     Ok((style | tool) & !app)
 }
 
-pub(super) fn attach_color_layer(color: Rgb) -> Result<isize, String> {
+pub(super) fn attach_surface_layer() -> Result<DesktopSurface, String> {
     let parent = locate()?;
-    let layer = create_layer(color)?;
-    if let Err(error) = place_layer(layer, parent) {
+    let layer = create_layer()?;
+    let primary = primary_monitor_rect()?;
+    if let Err(error) = place_layer(layer, parent, primary) {
         destroy_hwnd(layer);
         return Err(error);
     }
-    Ok(raw_hwnd(layer))
+    let width = u32::try_from(primary.right.saturating_sub(primary.left))
+        .map_err(|_| "primary monitor width does not fit u32".to_string())?;
+    let height = u32::try_from(primary.bottom.saturating_sub(primary.top))
+        .map_err(|_| "primary monitor height does not fit u32".to_string())?;
+    if width == 0 || height == 0 {
+        destroy_hwnd(layer);
+        return Err("primary monitor has no area".to_string());
+    }
+    Ok(DesktopSurface {
+        hwnd: raw_hwnd(layer),
+        width,
+        height,
+    })
 }
 
 pub(super) fn destroy_layer(raw: isize) -> Result<(), String> {
@@ -88,13 +101,13 @@ pub(super) fn destroy_layer(raw: isize) -> Result<(), String> {
     unsafe { DestroyWindow(hwnd) }.map_err(|error| format!("DestroyWindow failed: {error}"))
 }
 
-fn create_layer(color: Rgb) -> Result<HWND, String> {
+fn create_layer() -> Result<HWND, String> {
     let module = unsafe { GetModuleHandleW(PCWSTR::null()) }
         .map_err(|error| format!("GetModuleHandleW failed: {error}"))?;
     let instance = HINSTANCE::from(module);
     register_layer_class(instance)?;
-    // WS_EX_LAYERED is required on Progman with WS_EX_NOREDIRECTIONBITMAP so GDI
-    // content composites under the transparent icon view.
+    // WS_EX_LAYERED is required on Progman with WS_EX_NOREDIRECTIONBITMAP so the
+    // GPU swapchain composites under the transparent icon view.
     let layer = unsafe {
         CreateWindowExW(
             WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
@@ -112,7 +125,6 @@ fn create_layer(color: Rgb) -> Result<HWND, String> {
         )
     }
     .map_err(|error| format!("CreateWindowExW failed: {error}"))?;
-    store_color(layer, color)?;
     unsafe {
         SetLayeredWindowAttributes(layer, COLORREF(0), 255, LWA_ALPHA)
             .map_err(|error| format!("SetLayeredWindowAttributes failed: {error}"))?;
@@ -142,12 +154,6 @@ fn register_layer_class(instance: HINSTANCE) -> Result<(), String> {
         return Ok(());
     }
     Err(format!("RegisterClassW failed with error {}", error.0))
-}
-
-fn store_color(layer: HWND, color: Rgb) -> Result<(), String> {
-    let colorref = isize::try_from(color.colorref())
-        .map_err(|_| "layer color does not fit a window value".to_string())?;
-    write_window_long(layer, GWLP_USERDATA, colorref)
 }
 
 fn locate() -> Result<WallpaperParent, String> {
@@ -299,35 +305,63 @@ fn has_ex_style(hwnd: HWND, flag: u32) -> bool {
     style & flag != 0
 }
 
-fn place_layer(layer: HWND, parent: WallpaperParent) -> Result<(), String> {
+fn primary_monitor_rect() -> Result<RECT, String> {
+    let monitor = unsafe { MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY) };
+    let mut info = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        rcMonitor: RECT::default(),
+        rcWork: RECT::default(),
+        dwFlags: 0,
+    };
+    if !unsafe { GetMonitorInfoW(monitor, &mut info) }.as_bool() {
+        return Err("GetMonitorInfoW failed for the primary monitor".to_string());
+    }
+    Ok(info.rcMonitor)
+}
+
+fn place_layer(layer: HWND, parent: WallpaperParent, primary: RECT) -> Result<(), String> {
     match parent {
         WallpaperParent::Worker { hwnd } => {
             let worker = hwnd_from_raw(hwnd)?;
-            fit_into_parent(layer, worker, None)
+            fit_into_parent(layer, worker, None, primary)
         }
         WallpaperParent::BehindIcons { progman, defview } => {
             let progman = hwnd_from_raw(progman)?;
             let defview = hwnd_from_raw(defview)?;
             // hwndInsertAfter is the window above us: DefView stays on top of the layer.
-            fit_into_parent(layer, progman, Some(defview))
+            fit_into_parent(layer, progman, Some(defview), primary)
         }
     }
 }
 
-fn fit_into_parent(layer: HWND, parent: HWND, behind: Option<HWND>) -> Result<(), String> {
+fn fit_into_parent(
+    layer: HWND,
+    parent: HWND,
+    behind: Option<HWND>,
+    primary: RECT,
+) -> Result<(), String> {
     make_child(layer)?;
     assign_parent(layer, parent)?;
-    let mut rect = RECT::default();
-    unsafe { GetClientRect(parent, &mut rect) }
-        .map_err(|error| format!("GetClientRect failed: {error}"))?;
-    let width = rect.right.saturating_sub(rect.left);
-    let height = rect.bottom.saturating_sub(rect.top);
+    let width = primary.right.saturating_sub(primary.left);
+    let height = primary.bottom.saturating_sub(primary.top);
     if width <= 0 || height <= 0 {
-        return Err("wallpaper parent has no client area".to_string());
+        return Err("primary monitor has no client area".to_string());
     }
+    // Progman / WorkerW cover the virtual screen, so primary screen coords
+    // map into the parent client area.
     let flags = SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED;
-    unsafe { SetWindowPos(layer, behind, 0, 0, width, height, flags) }
-        .map_err(|error| format!("SetWindowPos failed: {error}"))?;
+    unsafe {
+        SetWindowPos(
+            layer,
+            behind,
+            primary.left,
+            primary.top,
+            width,
+            height,
+            flags,
+        )
+    }
+    .map_err(|error| format!("SetWindowPos failed: {error}"))?;
     let _ = unsafe { ShowWindow(layer, SW_SHOWNOACTIVATE) };
     let _ = unsafe { InvalidateRect(Some(layer), None, true) };
     let _ = unsafe { UpdateWindow(layer) };
@@ -397,35 +431,17 @@ unsafe extern "system" fn layer_window_proc(
     lparam: LPARAM,
 ) -> LRESULT {
     match message {
-        WM_ERASEBKGND => {
-            paint_layer(hwnd, HDC(wparam.0 as *mut core::ffi::c_void));
-            LRESULT(1)
-        }
+        // The GPU swapchain owns the pixels. Skip GDI fills so we do not
+        // overwrite the still image after the first present.
+        WM_ERASEBKGND => LRESULT(1),
         WM_PAINT => {
-            let mut paint = PAINTSTRUCT::default();
-            let hdc = unsafe { BeginPaint(hwnd, &mut paint) };
-            paint_layer(hwnd, hdc);
-            let _ = unsafe { EndPaint(hwnd, &paint) };
+            let mut paint = windows::Win32::Graphics::Gdi::PAINTSTRUCT::default();
+            let _hdc = unsafe { windows::Win32::Graphics::Gdi::BeginPaint(hwnd, &mut paint) };
+            let _ = unsafe { windows::Win32::Graphics::Gdi::EndPaint(hwnd, &paint) };
             LRESULT(0)
         }
         _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
     }
-}
-
-fn paint_layer(hwnd: HWND, hdc: HDC) {
-    if hdc.is_invalid() {
-        return;
-    }
-    let color = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as u32;
-    let brush = unsafe { CreateSolidBrush(COLORREF(color)) };
-    if brush.is_invalid() {
-        return;
-    }
-    let mut rect = RECT::default();
-    if unsafe { GetClientRect(hwnd, &mut rect) }.is_ok() {
-        let _ = unsafe { FillRect(hdc, &rect, brush) };
-    }
-    let _ = unsafe { DeleteObject(HGDIOBJ::from(brush)) };
 }
 
 #[cfg(test)]

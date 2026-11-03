@@ -1,24 +1,11 @@
 //! Desktop attachment. Operating-system calls stay behind [`DesktopHost`].
 
-/// Solid color used until image wallpapers exist.
-pub const LAYER_COLOR: Rgb = Rgb {
-    red: 0,
-    green: 114,
-    blue: 178,
-};
-
+/// Native wallpaper surface the renderer presents into.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Rgb {
-    pub red: u8,
-    pub green: u8,
-    pub blue: u8,
-}
-
-impl Rgb {
-    /// `COLORREF` layout is `0x00BBGGRR`.
-    pub fn colorref(self) -> u32 {
-        u32::from(self.red) | (u32::from(self.green) << 8) | (u32::from(self.blue) << 16)
-    }
+pub struct DesktopSurface {
+    pub hwnd: isize,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// Windows the shell observed after asking Progman to create a wallpaper window.
@@ -80,15 +67,15 @@ pub fn choose_parent(found: ObservedDesktop) -> Result<WallpaperParent, String> 
     Err("WorkerW sibling is missing".to_string())
 }
 
-/// Owns the native wallpaper surface for one desktop session.
+/// Owns the native wallpaper HWND for one desktop session.
 pub trait DesktopHost {
-    fn attach_color(&mut self, color: Rgb) -> Result<(), String>;
+    fn attach_surface(&mut self) -> Result<DesktopSurface, String>;
     fn detach(&mut self) -> Result<(), String>;
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{choose_parent, DesktopHost, ObservedDesktop, Rgb, WallpaperParent, LAYER_COLOR};
+    use super::{choose_parent, DesktopHost, DesktopSurface, ObservedDesktop, WallpaperParent};
 
     fn observed(
         progman: isize,
@@ -153,38 +140,29 @@ mod tests {
     }
 
     #[test]
-    fn colorref_packs_channels_as_blue_green_red() {
-        assert_eq!(LAYER_COLOR.colorref(), 0x00B2_7200);
-        assert_eq!(
-            Rgb {
-                red: 1,
-                green: 2,
-                blue: 3
-            }
-            .colorref(),
-            0x0003_0201
-        );
-    }
-
-    #[test]
     fn a_host_can_attach_and_detach_without_the_operating_system() {
         struct FakeHost {
-            color: Option<Rgb>,
+            surface: Option<DesktopSurface>,
         }
         impl DesktopHost for FakeHost {
-            fn attach_color(&mut self, color: Rgb) -> Result<(), String> {
-                self.color = Some(color);
-                Ok(())
+            fn attach_surface(&mut self) -> Result<DesktopSurface, String> {
+                let surface = DesktopSurface {
+                    hwnd: 42,
+                    width: 800,
+                    height: 600,
+                };
+                self.surface = Some(surface);
+                Ok(surface)
             }
             fn detach(&mut self) -> Result<(), String> {
-                self.color = None;
+                self.surface = None;
                 Ok(())
             }
         }
-        let mut host = FakeHost { color: None };
-        host.attach_color(LAYER_COLOR).expect("attach");
-        assert_eq!(host.color, Some(LAYER_COLOR));
+        let mut host = FakeHost { surface: None };
+        let surface = host.attach_surface().expect("attach");
+        assert_eq!(surface.hwnd, 42);
         host.detach().expect("detach");
-        assert_eq!(host.color, None);
+        assert!(host.surface.is_none());
     }
 }
