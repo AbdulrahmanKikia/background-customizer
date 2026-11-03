@@ -3669,6 +3669,7 @@ dependencies = [
  "core",
  "decoder",
  "renderer",
+ "serde",
  "tauri",
  "tauri-build",
  "tauri-plugin-single-instance",

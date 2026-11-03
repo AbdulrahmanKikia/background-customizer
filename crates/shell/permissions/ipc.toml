@@ -1,0 +1,24 @@
+[[permission]]
+identifier = "allow-get-config"
+description = "Allows reading the persisted wallpaper configuration"
+commands.allow = ["get_config"]
+
+[[permission]]
+identifier = "allow-list-monitors"
+description = "Allows listing connected monitors"
+commands.allow = ["list_monitors"]
+
+[[permission]]
+identifier = "allow-get-state"
+description = "Allows reading config and monitor state together"
+commands.allow = ["get_state"]
+
+[[permission]]
+identifier = "allow-set-monitor-wallpaper"
+description = "Allows changing a monitor wallpaper assignment"
+commands.allow = ["set_monitor_wallpaper"]
+
+[[permission]]
+identifier = "allow-set-monitor-fit"
+description = "Allows changing a monitor fit mode"
+commands.allow = ["set_monitor_fit"]

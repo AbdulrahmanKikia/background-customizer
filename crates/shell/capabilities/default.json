@@ -3,5 +3,13 @@
   "identifier": "default",
   "description": "Capability for the settings window",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "allow-get-config",
+    "allow-list-monitors",
+    "allow-get-state",
+    "allow-set-monitor-wallpaper",
+    "allow-set-monitor-fit"
+  ]
 }

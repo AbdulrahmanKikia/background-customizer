@@ -1,15 +1,17 @@
-//! Tray, settings window, single instance, login autostart, and desktop attach.
+//! Tray, settings window, single instance, autostart, desktop attach, and IPC.
 //!
 //! Closing settings hides the window. Quit is the tray command that exits.
-//! Each connected monitor shows a still image behind the desktop icons.
+//! Wallpaper and monitor assignments persist across restarts.
 
 mod desktop;
+mod ipc;
 mod lifecycle;
 mod platform;
 mod tray;
 
-use tauri::WindowEvent;
+use tauri::{Manager, WindowEvent};
 
+use ipc::{load_store, resolve_config_path};
 use lifecycle::hides_on_close;
 
 #[derive(Debug)]
@@ -31,6 +33,13 @@ pub fn run() {
                 tray::present_settings(app);
             }
         }))
+        .invoke_handler(tauri::generate_handler![
+            ipc::get_config,
+            ipc::list_monitors,
+            ipc::get_state,
+            ipc::set_monitor_wallpaper,
+            ipc::set_monitor_fit,
+        ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if hides_on_close() {
@@ -40,9 +49,17 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            let path = resolve_config_path(app.handle())?;
+            let store = load_store(path)?;
+            app.manage(store);
             tray::install(app.handle())?;
             platform::enable_current_user_autostart()?;
-            platform::attach_desktop()?;
+            platform::attach_desktop(app.handle())?;
+            // Verification / scripting hook: apply a bundled sample through the
+            // same persist path as `set_monitor_wallpaper`, then continue.
+            if let Err(error) = ipc::apply_bootstrap_sample(app.handle()) {
+                eprintln!("bootstrap wallpaper failed: {error}");
+            }
             Ok(())
         })
         .build(tauri::generate_context!())
