@@ -1,8 +1,9 @@
-//! Tray, settings window, single instance, and login autostart.
+//! Tray, settings window, single instance, login autostart, and desktop attach.
 //!
 //! Closing settings hides the window. Quit is the tray command that exits.
-//! There is no wallpaper surface and no WorkerW attach.
+//! The wallpaper surface is a solid color behind the desktop icons.
 
+mod desktop;
 mod lifecycle;
 mod platform;
 mod tray;
@@ -41,16 +42,19 @@ pub fn run() {
         .setup(|app| {
             tray::install(app.handle())?;
             platform::enable_current_user_autostart()?;
+            platform::attach_desktop()?;
             Ok(())
         })
         .build(tauri::generate_context!())
         .map(|app| {
-            app.run(|_app, event| {
-                if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
+            app.run(|_app, event| match event {
+                tauri::RunEvent::ExitRequested { api, code, .. } => {
                     if code != Some(tauri::RESTART_EXIT_CODE) && !lifecycle::quit_requested() {
                         api.prevent_exit();
                     }
                 }
+                tauri::RunEvent::Exit => platform::detach_desktop(),
+                _ => {}
             });
         });
     if let Err(error) = result {
