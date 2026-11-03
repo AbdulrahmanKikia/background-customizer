@@ -1,11 +1,16 @@
 //! Desktop attachment. Operating-system calls stay behind [`DesktopHost`].
 
+use core_lib::{Monitor, MonitorId};
+
 /// Native wallpaper surface the renderer presents into.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DesktopSurface {
     pub hwnd: isize,
     pub width: u32,
     pub height: u32,
+    pub left: i32,
+    pub top: i32,
+    pub monitor_id: MonitorId,
 }
 
 /// Windows the shell observed after asking Progman to create a wallpaper window.
@@ -67,15 +72,29 @@ pub fn choose_parent(found: ObservedDesktop) -> Result<WallpaperParent, String> 
     Err("WorkerW sibling is missing".to_string())
 }
 
-/// Owns the native wallpaper HWND for one desktop session.
+/// Owns native wallpaper HWNDs for every connected monitor.
 pub trait DesktopHost {
-    fn attach_surface(&mut self) -> Result<DesktopSurface, String>;
-    fn detach(&mut self) -> Result<(), String>;
+    fn attach_monitors(&mut self, monitors: &[Monitor]) -> Result<Vec<DesktopSurface>, String>;
+    fn detach_all(&mut self) -> Result<(), String>;
+}
+
+/// Pick which bundled sample index (0 = A, 1 = B) a monitor should show.
+pub fn sample_index_for_monitor(monitors: &[Monitor], monitor_id: &MonitorId) -> usize {
+    let position = monitors
+        .iter()
+        .position(|monitor| monitor.id() == monitor_id)
+        .unwrap_or(0);
+    position % 2
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{choose_parent, DesktopHost, DesktopSurface, ObservedDesktop, WallpaperParent};
+    use core_lib::{Monitor, MonitorId};
+
+    use super::{
+        choose_parent, sample_index_for_monitor, DesktopHost, DesktopSurface, ObservedDesktop,
+        WallpaperParent,
+    };
 
     fn observed(
         progman: isize,
@@ -93,6 +112,11 @@ mod tests {
             worker_after_parent,
             progman_no_redirection,
         }
+    }
+
+    fn monitor(id: &str, primary: bool) -> Monitor {
+        Monitor::placed(MonitorId::new(id).expect("id"), id, 800, 600, 0, 0, primary)
+            .expect("monitor")
     }
 
     #[test]
@@ -140,29 +164,60 @@ mod tests {
     }
 
     #[test]
-    fn a_host_can_attach_and_detach_without_the_operating_system() {
+    fn sample_index_alternates_across_monitors() {
+        let monitors = vec![monitor("a", true), monitor("b", false), monitor("c", false)];
+        assert_eq!(
+            sample_index_for_monitor(&monitors, &MonitorId::new("a").expect("id")),
+            0
+        );
+        assert_eq!(
+            sample_index_for_monitor(&monitors, &MonitorId::new("b").expect("id")),
+            1
+        );
+        assert_eq!(
+            sample_index_for_monitor(&monitors, &MonitorId::new("c").expect("id")),
+            0
+        );
+    }
+
+    #[test]
+    fn a_host_can_attach_every_monitor_without_the_operating_system() {
         struct FakeHost {
-            surface: Option<DesktopSurface>,
+            surfaces: Vec<DesktopSurface>,
         }
         impl DesktopHost for FakeHost {
-            fn attach_surface(&mut self) -> Result<DesktopSurface, String> {
-                let surface = DesktopSurface {
-                    hwnd: 42,
-                    width: 800,
-                    height: 600,
-                };
-                self.surface = Some(surface);
-                Ok(surface)
+            fn attach_monitors(
+                &mut self,
+                monitors: &[Monitor],
+            ) -> Result<Vec<DesktopSurface>, String> {
+                self.surfaces = monitors
+                    .iter()
+                    .enumerate()
+                    .map(|(index, monitor)| DesktopSurface {
+                        hwnd: (index + 1) as isize,
+                        width: monitor.width_px(),
+                        height: monitor.height_px(),
+                        left: monitor.left_px(),
+                        top: monitor.top_px(),
+                        monitor_id: monitor.id().clone(),
+                    })
+                    .collect();
+                Ok(self.surfaces.clone())
             }
-            fn detach(&mut self) -> Result<(), String> {
-                self.surface = None;
+            fn detach_all(&mut self) -> Result<(), String> {
+                self.surfaces.clear();
                 Ok(())
             }
         }
-        let mut host = FakeHost { surface: None };
-        let surface = host.attach_surface().expect("attach");
-        assert_eq!(surface.hwnd, 42);
-        host.detach().expect("detach");
-        assert!(host.surface.is_none());
+        let monitors = vec![monitor("a", true), monitor("b", false)];
+        let mut host = FakeHost {
+            surfaces: Vec::new(),
+        };
+        let surfaces = host.attach_monitors(&monitors).expect("attach");
+        assert_eq!(surfaces.len(), 2);
+        assert_eq!(surfaces[0].hwnd, 1);
+        assert_eq!(surfaces[1].monitor_id.as_str(), "b");
+        host.detach_all().expect("detach");
+        assert!(host.surfaces.is_empty());
     }
 }

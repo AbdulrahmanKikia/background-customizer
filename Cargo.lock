@@ -3666,6 +3666,7 @@ name = "shell"
 version = "0.1.0"
 dependencies = [
  "auto-launch",
+ "core",
  "decoder",
  "renderer",
  "tauri",

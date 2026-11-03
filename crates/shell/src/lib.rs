@@ -1,7 +1,7 @@
 //! Tray, settings window, single instance, login autostart, and desktop attach.
 //!
 //! Closing settings hides the window. Quit is the tray command that exits.
-//! The primary monitor shows a still image behind the desktop icons.
+//! Each connected monitor shows a still image behind the desktop icons.
 
 mod desktop;
 mod lifecycle;
