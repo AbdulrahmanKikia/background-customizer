@@ -1,8 +1,11 @@
-//! Taskbar removal and current-user login autostart.
-//! The Win32 taskbar call lives in `win32`.
+//! Taskbar removal, current-user login autostart, and the desktop wallpaper host.
+//! Unsafe Win32 stays in `win32`.
+
+use std::sync::Mutex;
 
 use auto_launch::{AutoLaunch, AutoLaunchBuilder, WindowsEnableMode};
 
+use crate::desktop::{DesktopHost, LAYER_COLOR};
 use crate::lifecycle::{ensure_login_autostart, LoginAutostart, TaskbarPresence};
 use crate::ShellError;
 
@@ -52,6 +55,77 @@ fn current_user_launch() -> Result<AutoLaunch, String> {
     builder.set_app_path(&executable.display().to_string());
     builder.set_windows_enable_mode(WindowsEnableMode::CurrentUser);
     builder.build().map_err(|error| error.to_string())
+}
+
+/// The color layer lives until the process exits. Dropping it here would
+/// destroy the wallpaper as soon as setup returned.
+#[cfg(windows)]
+static DESKTOP: Mutex<Option<WindowsDesktop>> = Mutex::new(None);
+
+#[cfg(windows)]
+struct WindowsDesktop {
+    layer: isize,
+}
+
+#[cfg(windows)]
+impl DesktopHost for WindowsDesktop {
+    fn attach_color(&mut self, color: crate::desktop::Rgb) -> Result<(), String> {
+        if self.layer != 0 {
+            return Ok(());
+        }
+        self.layer = win32::attach_color_layer(color)?;
+        Ok(())
+    }
+
+    fn detach(&mut self) -> Result<(), String> {
+        if self.layer == 0 {
+            return Ok(());
+        }
+        win32::destroy_layer(self.layer)?;
+        self.layer = 0;
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+impl Drop for WindowsDesktop {
+    fn drop(&mut self) {
+        let _ = self.detach();
+    }
+}
+
+pub fn attach_desktop() -> Result<(), ShellError> {
+    #[cfg(windows)]
+    {
+        let mut host = DESKTOP
+            .lock()
+            .map_err(|_| ShellError("desktop host lock poisoned".to_string()))?;
+        if host.is_some() {
+            return Ok(());
+        }
+        let mut desktop = WindowsDesktop { layer: 0 };
+        desktop.attach_color(LAYER_COLOR).map_err(ShellError)?;
+        *host = Some(desktop);
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = LAYER_COLOR;
+        Err(ShellError(
+            "desktop attach is only implemented on Windows".to_string(),
+        ))
+    }
+}
+
+pub fn detach_desktop() {
+    #[cfg(windows)]
+    {
+        let mut host = match DESKTOP.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        host.take();
+    }
 }
 
 fn omit_from_taskbar(hwnd: isize) -> Result<(), String> {
