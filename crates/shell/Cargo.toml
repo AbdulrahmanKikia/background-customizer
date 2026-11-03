@@ -19,6 +19,8 @@ tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
 auto-launch = "0.6.0"
+decoder = { path = "../decoder" }
+renderer = { path = "../renderer" }
 tauri = { version = "2.12.5", features = ["tray-icon"] }
 tauri-plugin-single-instance = { version = "2.5.5", default-features = false }
 

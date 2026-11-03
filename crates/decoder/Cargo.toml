@@ -5,3 +5,6 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 description = "Image and video decode"
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }

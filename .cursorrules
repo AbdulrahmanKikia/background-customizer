@@ -6,8 +6,8 @@ Windows-first. Use React because the spec names shadcn/ui.
 ## Crate layout
 
 - `crates/core` — config, profiles, monitor model (`serde`, `tokio`)
-- `crates/renderer` — per-monitor GPU surface (`wgpu`). Do not implement rendering until that milestone.
-- `crates/decoder` — image and video decode. Empty until that milestone.
+- `crates/renderer` — per-monitor GPU surface (`wgpu`). Static images present once; no idle frames.
+- `crates/decoder` — image decode for still wallpapers. Video decode arrives later.
 - `crates/shell` — Tauri v2 app: tray, settings window, autostart, IPC
 - `ui` — Vite + React + TypeScript + Tailwind + shadcn/ui. Frontend package, not a Cargo crate.
 - `crates/importer` — third-party wallpaper formats

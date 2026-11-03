@@ -7,4 +7,7 @@ publish.workspace = true
 description = "Per-monitor GPU surface"
 
 [dependencies]
+decoder = { path = "../decoder" }
+pollster = "0.4"
+raw-window-handle = "0.6"
 wgpu = "30"
