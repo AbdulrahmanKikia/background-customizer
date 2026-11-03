@@ -22,6 +22,7 @@ auto-launch = "0.6.0"
 core_lib = { path = "../core", package = "core" }
 decoder = { path = "../decoder" }
 renderer = { path = "../renderer" }
+serde = { version = "1", features = ["derive"] }
 tauri = { version = "2.12.5", features = ["tray-icon"] }
 tauri-plugin-single-instance = { version = "2.5.5", default-features = false }
 

@@ -4,15 +4,21 @@
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use auto_launch::{AutoLaunch, AutoLaunchBuilder, WindowsEnableMode};
-use core_lib::{diff_monitors, Monitor, MonitorChange, MonitorId, MonitorSource};
-use decoder::{decode_bytes, RgbaImage};
+use core_lib::{
+    diff_monitors, BundledSample, Config, Monitor, MonitorChange, MonitorId, MonitorSource,
+    WallpaperSource,
+};
+use decoder::{decode_bytes, decode_path, RgbaImage};
 use renderer::{PresentCounter, StaticImageSurface};
+use tauri::{AppHandle, Manager, Runtime};
 
-use crate::desktop::{sample_index_for_monitor, DesktopHost, DesktopSurface};
+use crate::desktop::{DesktopHost, DesktopSurface};
+use crate::ipc::{emit_monitors_changed, AppStore};
 use crate::lifecycle::{ensure_login_autostart, LoginAutostart, TaskbarPresence};
 use crate::ShellError;
 
@@ -76,7 +82,7 @@ static DESKTOP: Mutex<Option<WindowsDesktop>> = Mutex::new(None);
 struct MonitorSlot {
     layer: DesktopSurface,
     gpu: StaticImageSurface,
-    sample_index: usize,
+    wallpaper: WallpaperSource,
 }
 
 #[cfg(windows)]
@@ -85,6 +91,8 @@ struct WindowsDesktop {
     slots: HashMap<String, MonitorSlot>,
     presents: Arc<PresentCounter>,
     samples: [RgbaImage; 2],
+    config: Arc<Mutex<Config>>,
+    config_path: std::path::PathBuf,
 }
 
 #[cfg(windows)]
@@ -107,14 +115,15 @@ impl DesktopHost for WindowsDesktop {
 #[cfg(windows)]
 impl WindowsDesktop {
     fn apply_layout(&mut self, monitors: &[Monitor]) -> Result<(), String> {
+        self.sync_assignments(monitors)?;
         let changes = diff_monitors(&self.monitors, monitors);
         for change in changes {
             match change {
                 MonitorChange::Removed(id) => self.remove_slot(id.as_str())?,
-                MonitorChange::Added(monitor) => self.add_slot(&monitor, monitors)?,
+                MonitorChange::Added(monitor) => self.add_slot(&monitor)?,
                 MonitorChange::Changed(monitor) => {
                     self.remove_slot(monitor.id().as_str())?;
-                    self.add_slot(&monitor, monitors)?;
+                    self.add_slot(&monitor)?;
                 }
             }
         }
@@ -123,7 +132,35 @@ impl WindowsDesktop {
         Ok(())
     }
 
-    fn add_slot(&mut self, monitor: &Monitor, layout: &[Monitor]) -> Result<(), String> {
+    fn sync_assignments(&mut self, monitors: &[Monitor]) -> Result<(), String> {
+        let mut config = self
+            .config
+            .lock()
+            .map_err(|_| "config lock poisoned".to_string())?;
+        let changed = config
+            .ensure_monitor_assignments(monitors)
+            .map_err(|error| error.to_string())?;
+        if changed {
+            config
+                .save_json_sync(&self.config_path)
+                .map_err(|error| error.to_string())?;
+            write_config_applied(&self.config_path, &config);
+        }
+        Ok(())
+    }
+
+    fn wallpaper_for(&self, monitor_id: &MonitorId) -> Result<WallpaperSource, String> {
+        let config = self
+            .config
+            .lock()
+            .map_err(|_| "config lock poisoned".to_string())?;
+        config
+            .wallpaper_for(monitor_id)
+            .cloned()
+            .ok_or_else(|| format!("no wallpaper assignment for {}", monitor_id.as_str()))
+    }
+
+    fn add_slot(&mut self, monitor: &Monitor) -> Result<(), String> {
         let native = win32::NativeMonitor {
             id: monitor.id().as_str().to_string(),
             name: monitor.name().to_string(),
@@ -134,20 +171,21 @@ impl WindowsDesktop {
             primary: monitor.primary(),
         };
         let layer = win32::attach_monitor_layer(&native)?;
-        let sample_index = sample_index_for_monitor(layout, monitor.id());
+        let wallpaper = self.wallpaper_for(monitor.id())?;
+        let image = resolve_image(&wallpaper, &self.samples)?;
         let mut gpu = StaticImageSurface::attach(
             layer.hwnd,
             layer.width,
             layer.height,
             Arc::clone(&self.presents),
         )?;
-        gpu.present_static(&self.samples[sample_index])?;
+        gpu.present_static(&image)?;
         self.slots.insert(
             monitor.id().as_str().to_string(),
             MonitorSlot {
                 layer,
                 gpu,
-                sample_index,
+                wallpaper,
             },
         );
         Ok(())
@@ -158,6 +196,21 @@ impl WindowsDesktop {
             drop(slot.gpu);
             win32::destroy_layer(slot.layer.hwnd)?;
         }
+        Ok(())
+    }
+
+    fn apply_wallpaper(
+        &mut self,
+        monitor_id: &str,
+        wallpaper: &WallpaperSource,
+    ) -> Result<(), String> {
+        let Some(slot) = self.slots.get_mut(monitor_id) else {
+            return Ok(());
+        };
+        let image = resolve_image(wallpaper, &self.samples)?;
+        slot.gpu.present_static(&image)?;
+        slot.wallpaper = wallpaper.clone();
+        write_monitor_stats(&self.monitors, &self.slots);
         Ok(())
     }
 }
@@ -198,9 +251,61 @@ impl MonitorSource for WindowsMonitorSource {
     }
 }
 
-pub fn attach_desktop() -> Result<(), ShellError> {
+fn resolve_image(
+    wallpaper: &WallpaperSource,
+    samples: &[RgbaImage; 2],
+) -> Result<RgbaImage, String> {
+    match wallpaper {
+        WallpaperSource::Bundled {
+            sample: BundledSample::A,
+        } => Ok(samples[0].clone()),
+        WallpaperSource::Bundled {
+            sample: BundledSample::B,
+        } => Ok(samples[1].clone()),
+        WallpaperSource::Path { path } => decode_path(Path::new(path)),
+    }
+}
+
+pub fn current_monitors() -> Result<Vec<Monitor>, String> {
     #[cfg(windows)]
     {
+        WindowsMonitorSource
+            .monitors()
+            .map_err(|error| error.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        Err("monitor enumeration is only implemented on Windows".to_string())
+    }
+}
+
+pub fn apply_monitor_wallpaper(
+    monitor_id: &str,
+    wallpaper: &WallpaperSource,
+) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let mut host = DESKTOP
+            .lock()
+            .map_err(|_| "desktop host lock poisoned".to_string())?;
+        let Some(desktop) = host.as_mut() else {
+            return Ok(());
+        };
+        desktop.apply_wallpaper(monitor_id, wallpaper)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (monitor_id, wallpaper);
+        Ok(())
+    }
+}
+
+pub fn attach_desktop<R: Runtime>(app: &AppHandle<R>) -> Result<(), ShellError> {
+    #[cfg(windows)]
+    {
+        let store = app
+            .try_state::<AppStore>()
+            .ok_or_else(|| ShellError("app store is missing".to_string()))?;
         let mut host = DESKTOP
             .lock()
             .map_err(|_| ShellError("desktop host lock poisoned".to_string()))?;
@@ -218,14 +323,23 @@ pub fn attach_desktop() -> Result<(), ShellError> {
             slots: HashMap::new(),
             presents: Arc::clone(&presents),
             samples,
+            config: Arc::clone(&store.config),
+            config_path: store.path.clone(),
         };
         let monitors = WindowsMonitorSource
             .monitors()
             .map_err(|error| ShellError(error.to_string()))?;
         desktop.attach_monitors(&monitors).map_err(ShellError)?;
+        {
+            let config = store
+                .config
+                .lock()
+                .map_err(|_| ShellError("config lock poisoned".to_string()))?;
+            write_config_applied(&store.path, &config);
+        }
         write_present_stats(&presents, "after_first");
         schedule_idle_present_check(Arc::clone(&presents));
-        schedule_hotplug_resync();
+        schedule_hotplug_resync(app.clone());
         // Exercise the hotplug path once so a single-monitor machine still
         // proves resync does not crash.
         desktop.apply_layout(&monitors).map_err(ShellError)?;
@@ -234,6 +348,7 @@ pub fn attach_desktop() -> Result<(), ShellError> {
     }
     #[cfg(not(windows))]
     {
+        let _ = app;
         Err(ShellError(
             "desktop attach is only implemented on Windows".to_string(),
         ))
@@ -258,10 +373,10 @@ fn schedule_idle_present_check(presents: Arc<PresentCounter>) {
     });
 }
 
-fn schedule_hotplug_resync() {
+fn schedule_hotplug_resync<R: Runtime>(app: AppHandle<R>) {
     #[cfg(windows)]
     {
-        std::thread::spawn(|| loop {
+        std::thread::spawn(move || loop {
             std::thread::sleep(Duration::from_millis(750));
             if !win32::take_display_changed() {
                 continue;
@@ -277,11 +392,17 @@ fn schedule_hotplug_resync() {
                 Ok(monitors) => {
                     if let Err(error) = desktop.apply_layout(&monitors) {
                         eprintln!("monitor resync failed: {error}");
+                    } else {
+                        emit_monitors_changed(&app, &monitors);
                     }
                 }
                 Err(error) => eprintln!("monitor enumeration failed: {error}"),
             }
         });
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
     }
 }
 
@@ -289,6 +410,40 @@ fn write_present_stats(presents: &PresentCounter, label: &str) {
     let path = std::env::temp_dir().join("background-customizer-presents.txt");
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
         let _ = writeln!(file, "{label} frames={}", presents.frames_submitted());
+    }
+}
+
+fn write_config_applied(path: &Path, config: &Config) {
+    let stats = std::env::temp_dir().join("background-customizer-config.txt");
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(stats)
+    {
+        let _ = writeln!(file, "path={}", path.display());
+        let _ = writeln!(
+            file,
+            "active_profile={}",
+            config.active_profile().unwrap_or("")
+        );
+        if let Some(profile) = config.active_profile_data() {
+            for assignment in profile.monitors() {
+                let wallpaper = match assignment.wallpaper() {
+                    WallpaperSource::Bundled { sample } => {
+                        format!("bundled:{}", sample.as_str())
+                    }
+                    WallpaperSource::Path { path } => format!("path:{path}"),
+                };
+                let _ = writeln!(
+                    file,
+                    "monitor={} fit={:?} wallpaper={}",
+                    assignment.monitor_id().as_str(),
+                    assignment.fit(),
+                    wallpaper
+                );
+            }
+        }
     }
 }
 
@@ -305,8 +460,11 @@ fn write_monitor_stats(monitors: &[Monitor], slots: &HashMap<String, MonitorSlot
         for monitor in monitors {
             let sample = slots
                 .get(monitor.id().as_str())
-                .map(|slot| slot.sample_index)
-                .unwrap_or(0);
+                .map(|slot| match &slot.wallpaper {
+                    WallpaperSource::Bundled { sample } => sample.as_str().to_uppercase(),
+                    WallpaperSource::Path { .. } => "PATH".to_string(),
+                })
+                .unwrap_or_else(|| "?".to_string());
             let _ = writeln!(
                 file,
                 "id={} primary={} {}x{} @{},{} sample={}",
@@ -316,7 +474,7 @@ fn write_monitor_stats(monitors: &[Monitor], slots: &HashMap<String, MonitorSlot
                 monitor.height_px(),
                 monitor.left_px(),
                 monitor.top_px(),
-                if sample == 0 { "A" } else { "B" }
+                sample
             );
         }
     }

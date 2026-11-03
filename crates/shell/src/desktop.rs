@@ -78,23 +78,11 @@ pub trait DesktopHost {
     fn detach_all(&mut self) -> Result<(), String>;
 }
 
-/// Pick which bundled sample index (0 = A, 1 = B) a monitor should show.
-pub fn sample_index_for_monitor(monitors: &[Monitor], monitor_id: &MonitorId) -> usize {
-    let position = monitors
-        .iter()
-        .position(|monitor| monitor.id() == monitor_id)
-        .unwrap_or(0);
-    position % 2
-}
-
 #[cfg(test)]
 mod tests {
     use core_lib::{Monitor, MonitorId};
 
-    use super::{
-        choose_parent, sample_index_for_monitor, DesktopHost, DesktopSurface, ObservedDesktop,
-        WallpaperParent,
-    };
+    use super::{choose_parent, DesktopHost, DesktopSurface, ObservedDesktop, WallpaperParent};
 
     fn observed(
         progman: isize,
@@ -161,23 +149,6 @@ mod tests {
         assert!(missing_icons.is_err());
         let missing_worker = choose_parent(observed(10, 11, 3, 0, 0, false));
         assert!(missing_worker.is_err());
-    }
-
-    #[test]
-    fn sample_index_alternates_across_monitors() {
-        let monitors = vec![monitor("a", true), monitor("b", false), monitor("c", false)];
-        assert_eq!(
-            sample_index_for_monitor(&monitors, &MonitorId::new("a").expect("id")),
-            0
-        );
-        assert_eq!(
-            sample_index_for_monitor(&monitors, &MonitorId::new("b").expect("id")),
-            1
-        );
-        assert_eq!(
-            sample_index_for_monitor(&monitors, &MonitorId::new("c").expect("id")),
-            0
-        );
     }
 
     #[test]
