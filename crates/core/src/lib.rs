@@ -10,5 +10,5 @@ mod profile;
 
 pub use config::Config;
 pub use error::CoreError;
-pub use monitor::{FitMode, Monitor, MonitorId, MonitorSource};
+pub use monitor::{diff_monitors, FitMode, Monitor, MonitorChange, MonitorId, MonitorSource};
 pub use profile::{MonitorAssignment, Profile};
