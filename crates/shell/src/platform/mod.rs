@@ -300,6 +300,23 @@ pub fn apply_monitor_wallpaper(
     }
 }
 
+/// Apply on the UI thread. Tauri commands and hotplug workers should use this
+/// so wgpu/HWND work does not race the event loop.
+pub fn apply_monitor_wallpaper_on_main<R: Runtime>(
+    app: &AppHandle<R>,
+    monitor_id: String,
+    wallpaper: WallpaperSource,
+) -> Result<(), String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.run_on_main_thread(move || {
+        let result = apply_monitor_wallpaper(&monitor_id, &wallpaper);
+        let _ = tx.send(result);
+    })
+    .map_err(|error| format!("queue wallpaper apply: {error}"))?;
+    rx.recv()
+        .map_err(|error| format!("wallpaper apply worker: {error}"))?
+}
+
 pub fn attach_desktop<R: Runtime>(app: &AppHandle<R>) -> Result<(), ShellError> {
     #[cfg(windows)]
     {

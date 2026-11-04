@@ -171,7 +171,11 @@ pub fn apply_bootstrap_sample<R: Runtime>(app: &AppHandle<R>) -> Result<(), Stri
         }
     }
     for monitor in &monitors {
-        platform::apply_monitor_wallpaper(monitor.id().as_str(), &source)?;
+        platform::apply_monitor_wallpaper_on_main(
+            app,
+            monitor.id().as_str().to_string(),
+            source.clone(),
+        )?;
     }
     let config = persist_and_publish(app, store.inner())?;
     let marker = std::env::temp_dir().join("background-customizer-bootstrap.txt");
@@ -223,7 +227,7 @@ pub fn set_monitor_wallpaper<R: Runtime>(
             .set_monitor_wallpaper(&id, source.clone())
             .map_err(|error| error.to_string())?;
     }
-    platform::apply_monitor_wallpaper(id.as_str(), &source)?;
+    platform::apply_monitor_wallpaper_on_main(&app, id.as_str().to_string(), source)?;
     persist_and_publish(&app, &store)
 }
 

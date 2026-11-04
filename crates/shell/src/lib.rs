@@ -26,8 +26,29 @@ impl std::fmt::Display for ShellError {
 
 impl std::error::Error for ShellError {}
 
+fn install_crash_log() {
+    let path = std::env::temp_dir().join("background-customizer-crash.log");
+    std::panic::set_hook(Box::new(move |info| {
+        let location = info
+            .location()
+            .map(|loc| format!("{}:{}:{}", loc.file(), loc.line(), loc.column()))
+            .unwrap_or_else(|| "unknown".to_string());
+        let message = if let Some(message) = info.payload().downcast_ref::<&str>() {
+            (*message).to_string()
+        } else if let Some(message) = info.payload().downcast_ref::<String>() {
+            message.clone()
+        } else {
+            "non-string panic payload".to_string()
+        };
+        let body = format!("panic at {location}: {message}\n");
+        let _ = std::fs::write(&path, &body);
+        eprintln!("{body}");
+    }));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    install_crash_log();
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if lifecycle::on_second_instance() == lifecycle::TrayEffect::ShowSettings {
