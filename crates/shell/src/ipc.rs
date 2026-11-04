@@ -1,12 +1,13 @@
 //! Typed Tauri commands and events for config and monitor state.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use core_lib::{BundledSample, Config, FitMode, Monitor, MonitorId, WallpaperSource};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
+use crate::library::{self, LibraryItem};
 use crate::platform;
 use crate::ShellError;
 
@@ -244,6 +245,31 @@ pub fn set_monitor_fit<R: Runtime>(
             .map_err(|error| error.to_string())?;
     }
     persist_and_publish(&app, &store)
+}
+
+#[tauri::command]
+pub fn list_library(store: State<'_, AppStore>) -> Result<Vec<LibraryItem>, String> {
+    library::list_library(&store.path)
+}
+
+#[tauri::command]
+pub fn import_wallpaper(store: State<'_, AppStore>, path: String) -> Result<LibraryItem, String> {
+    library::import_image(&store.path, Path::new(&path))
+}
+
+#[tauri::command]
+pub fn apply_library_wallpaper<R: Runtime>(
+    app: AppHandle<R>,
+    store: State<'_, AppStore>,
+    monitor_id: String,
+    library_id: String,
+) -> Result<Config, String> {
+    let item = library::find_library_item(&store.path, &library_id)?;
+    let input = match item.wallpaper {
+        WallpaperSource::Bundled { sample } => WallpaperInput::Bundled { sample },
+        WallpaperSource::Path { path } => WallpaperInput::Path { path },
+    };
+    set_monitor_wallpaper(app, store, monitor_id, input)
 }
 
 #[cfg(test)]

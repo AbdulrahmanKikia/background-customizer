@@ -7,4 +7,5 @@ publish.workspace = true
 description = "Image and video decode"
 
 [dependencies]
+base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }

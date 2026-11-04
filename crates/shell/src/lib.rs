@@ -5,6 +5,7 @@
 
 mod desktop;
 mod ipc;
+mod library;
 mod lifecycle;
 mod platform;
 mod tray;
@@ -33,12 +34,16 @@ pub fn run() {
                 tray::present_settings(app);
             }
         }))
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             ipc::get_config,
             ipc::list_monitors,
             ipc::get_state,
             ipc::set_monitor_wallpaper,
             ipc::set_monitor_fit,
+            ipc::list_library,
+            ipc::import_wallpaper,
+            ipc::apply_library_wallpaper,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
