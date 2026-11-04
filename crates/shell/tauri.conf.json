@@ -23,7 +23,9 @@
         "width": 960,
         "height": 640,
         "resizable": true,
-        "skipTaskbar": true
+        "skipTaskbar": true,
+        "additionalBrowserArgs": "--disable-gpu --disable-gpu-compositing",
+        "dataDirectory": "settings-nogpu"
       }
     ],
     "security": {

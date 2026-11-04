@@ -1,71 +1,55 @@
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-
-type BundledSample = 'a' | 'b'
-
-type WallpaperSource =
-  | { kind: 'bundled'; sample: BundledSample }
-  | { kind: 'path'; path: string }
-
-type MonitorAssignment = {
-  monitor_id: string
-  fit: string
-  wallpaper: WallpaperSource
-}
-
-type Profile = {
-  name: string
-  monitors: MonitorAssignment[]
-}
-
-type Config = {
-  profiles: Profile[]
-  active_profile: string | null
-}
-
-type Monitor = {
-  id: string
-  name: string
-  width_px: number
-  height_px: number
-  left_px: number
-  top_px: number
-  primary: boolean
-}
-
-type AppState = {
-  config: Config
-  config_path: string
-  monitors: Monitor[]
-}
-
-function wallpaperLabel(wallpaper: WallpaperSource | undefined): string {
-  if (!wallpaper) {
-    return 'unset'
-  }
-  if (wallpaper.kind === 'bundled') {
-    return `bundled ${wallpaper.sample.toUpperCase()}`
-  }
-  return `path ${wallpaper.path}`
-}
+import { open } from '@tauri-apps/plugin-dialog'
+import { LibraryView } from '@/components/LibraryView'
+import { MonitorPicker } from '@/components/MonitorPicker'
+import { Sidebar } from '@/components/Sidebar'
+import type { AppState, Config, LibraryItem, Monitor, NavId } from '@/types'
 
 export default function App() {
+  const [nav, setNav] = useState<NavId>('library')
   const [state, setState] = useState<AppState | null>(null)
+  const [library, setLibrary] = useState<LibraryItem[]>([])
+  const [selectedLibraryId, setSelectedLibraryId] = useState<string | null>(null)
+  const [selectedMonitorId, setSelectedMonitorId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  async function refresh() {
+  async function refreshState() {
     const next = await invoke<AppState>('get_state')
     setState(next)
+    setSelectedMonitorId((current) => {
+      if (current && next.monitors.some((monitor) => monitor.id === current)) {
+        return current
+      }
+      return next.monitors.find((monitor) => monitor.primary)?.id ?? next.monitors[0]?.id ?? null
+    })
+  }
+
+  async function refreshLibrary() {
+    const items = await invoke<LibraryItem[]>('list_library')
+    setLibrary(items)
+    setSelectedLibraryId((current) => {
+      if (current && items.some((item) => item.id === current)) {
+        return current
+      }
+      return items[0]?.id ?? null
+    })
+  }
+
+  async function refreshAll() {
+    await Promise.all([refreshState(), refreshLibrary()])
     setError(null)
   }
 
   useEffect(() => {
+    document.documentElement.classList.add('dark')
     let cancelled = false
     void (async () => {
       try {
-        await refresh()
+        await refreshAll()
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : String(err))
@@ -73,10 +57,10 @@ export default function App() {
       }
     })()
     const unlistenConfig = listen<Config>('config-changed', () => {
-      void refresh()
+      void refreshState()
     })
     const unlistenMonitors = listen<Monitor[]>('monitors-changed', () => {
-      void refresh()
+      void refreshState()
     })
     return () => {
       cancelled = true
@@ -85,14 +69,27 @@ export default function App() {
     }
   }, [])
 
-  async function setSample(monitorId: string, sample: BundledSample) {
+  async function onImport() {
     setBusy(true)
+    setStatus(null)
     try {
-      await invoke('set_monitor_wallpaper', {
-        monitorId,
-        wallpaper: { kind: 'bundled', sample },
+      const selected = await open({
+        multiple: false,
+        filters: [
+          {
+            name: 'Images',
+            extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'],
+          },
+        ],
       })
-      await refresh()
+      if (!selected || Array.isArray(selected)) {
+        return
+      }
+      const item = await invoke<LibraryItem>('import_wallpaper', { path: selected })
+      await refreshLibrary()
+      setSelectedLibraryId(item.id)
+      setNav('library')
+      setStatus(`Imported “${item.title}”. Select a monitor and apply.`)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -100,73 +97,72 @@ export default function App() {
     }
   }
 
-  const active = state?.config.profiles.find(
-    (profile) => profile.name === state.config.active_profile,
-  )
+  async function onApply() {
+    if (!selectedMonitorId || !selectedLibraryId) {
+      return
+    }
+    setBusy(true)
+    setStatus(null)
+    try {
+      await invoke('apply_library_wallpaper', {
+        monitorId: selectedMonitorId,
+        libraryId: selectedLibraryId,
+      })
+      await refreshState()
+      const title =
+        library.find((item) => item.id === selectedLibraryId)?.title ?? 'wallpaper'
+      setStatus(`Applied “${title}” to the selected monitor.`)
+      setNav('monitors')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
-    <main className="min-h-svh bg-zinc-950 px-6 py-8 text-zinc-100">
-      <h1 className="text-xl font-medium tracking-tight">Background Customizer</h1>
-      <p className="mt-1 max-w-xl text-sm text-zinc-400">
-        Milestone 5 IPC stub — typed get/set commands and events. Library and
-        monitor picker arrive in Milestone 6.
-      </p>
-
-      {error ? (
-        <p className="mt-4 text-sm text-red-400" role="alert">
-          {error}
-        </p>
-      ) : null}
-
-      {state ? (
-        <section className="mt-6 space-y-4">
-          <p className="text-xs text-zinc-500 break-all">
-            Config: {state.config_path}
-          </p>
-          <ul className="space-y-3">
-            {state.monitors.map((monitor) => {
-              const assignment = active?.monitors.find(
-                (item) => item.monitor_id === monitor.id,
-              )
-              return (
-                <li
-                  key={monitor.id}
-                  className="border-b border-zinc-800 pb-3 text-sm"
-                >
-                  <div className="font-medium">
-                    {monitor.name || monitor.id}
-                    {monitor.primary ? ' (primary)' : ''}
-                  </div>
-                  <div className="text-zinc-400">
-                    {monitor.width_px}×{monitor.height_px} ·{' '}
-                    {wallpaperLabel(assignment?.wallpaper)}
-                  </div>
-                  <div className="mt-2 flex gap-2">
-                    <button
-                      type="button"
-                      disabled={busy}
-                      className="rounded bg-teal-700 px-3 py-1 text-xs disabled:opacity-50"
-                      onClick={() => void setSample(monitor.id, 'a')}
-                    >
-                      Sample A
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      className="rounded bg-violet-700 px-3 py-1 text-xs disabled:opacity-50"
-                      onClick={() => void setSample(monitor.id, 'b')}
-                    >
-                      Sample B
-                    </button>
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-        </section>
-      ) : (
-        <p className="mt-6 text-sm text-zinc-500">Loading state…</p>
-      )}
-    </main>
+    <div className="flex min-h-svh bg-background text-foreground">
+      <Sidebar active={nav} onChange={setNav} />
+      <main className="flex min-w-0 flex-1 flex-col">
+        <div className="flex-1 overflow-hidden p-6">
+          {!state ? (
+            <div className="flex h-full items-center justify-center text-step-1 text-muted-foreground">
+              Loading settings…
+            </div>
+          ) : nav === 'library' ? (
+            <LibraryView
+              items={library}
+              selectedId={selectedLibraryId}
+              busy={busy}
+              onSelect={setSelectedLibraryId}
+              onImport={() => void onImport()}
+            />
+          ) : (
+            <MonitorPicker
+              state={state}
+              library={library}
+              selectedMonitorId={selectedMonitorId}
+              selectedLibraryId={selectedLibraryId}
+              busy={busy}
+              onSelectMonitor={setSelectedMonitorId}
+              onApply={() => void onApply()}
+            />
+          )}
+        </div>
+        <footer className="border-t border-border px-6 py-3 text-step-1">
+          {error ? (
+            <p className="text-destructive" role="alert">
+              {error}
+            </p>
+          ) : status ? (
+            <p className="text-muted-foreground">{status}</p>
+          ) : (
+            <p className="text-muted-foreground">
+              Workflow: Library → select image → Monitors → Apply
+            </p>
+          )}
+        </footer>
+      </main>
+    </div>
   )
 }

@@ -22,3 +22,18 @@ commands.allow = ["set_monitor_wallpaper"]
 identifier = "allow-set-monitor-fit"
 description = "Allows changing a monitor fit mode"
 commands.allow = ["set_monitor_fit"]
+
+[[permission]]
+identifier = "allow-list-library"
+description = "Allows listing wallpaper library items"
+commands.allow = ["list_library"]
+
+[[permission]]
+identifier = "allow-import-wallpaper"
+description = "Allows importing an image into the wallpaper library"
+commands.allow = ["import_wallpaper"]
+
+[[permission]]
+identifier = "allow-apply-library-wallpaper"
+description = "Allows applying a library item to a monitor"
+commands.allow = ["apply_library_wallpaper"]

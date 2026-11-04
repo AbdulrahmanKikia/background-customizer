@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use image::imageops::FilterType;
-use image::{DynamicImage, ImageError};
+use image::{DynamicImage, ImageError, ImageFormat};
 
 /// RGBA8 pixels ready for a GPU texture upload.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +64,41 @@ pub fn decode_bytes(bytes: &[u8]) -> Result<RgbaImage, String> {
     let decoded = image::load_from_memory(bytes).map_err(format_image_error)?;
     let rgba = decoded.to_rgba8();
     RgbaImage::from_rgba8(rgba.width(), rgba.height(), rgba.into_raw())
+}
+
+/// Build a small PNG data URL suitable for the settings library grid.
+pub fn thumbnail_data_url_from_bytes(bytes: &[u8], max_edge: u32) -> Result<String, String> {
+    let image = decode_bytes(bytes)?;
+    thumbnail_data_url(&image, max_edge)
+}
+
+/// Build a small PNG data URL from an image file.
+pub fn thumbnail_data_url_from_path(path: &Path, max_edge: u32) -> Result<String, String> {
+    let image = decode_path(path)?;
+    thumbnail_data_url(&image, max_edge)
+}
+
+fn thumbnail_data_url(image: &RgbaImage, max_edge: u32) -> Result<String, String> {
+    if max_edge == 0 {
+        return Err("thumbnail size must be non-zero".to_string());
+    }
+    let longest = image.width.max(image.height).max(1);
+    let scale = (max_edge as f32 / longest as f32).min(1.0);
+    let width = ((image.width as f32) * scale).round().max(1.0) as u32;
+    let height = ((image.height as f32) * scale).round().max(1.0) as u32;
+    let source = DynamicImage::ImageRgba8(
+        image::RgbaImage::from_raw(image.width, image.height, image.pixels.clone())
+            .ok_or_else(|| "RGBA buffer does not match the image size".to_string())?,
+    );
+    let resized = source.resize_exact(width, height, FilterType::Triangle);
+    let mut png = Vec::new();
+    resized
+        .write_to(&mut std::io::Cursor::new(&mut png), ImageFormat::Png)
+        .map_err(|error| format!("failed to encode thumbnail: {error}"))?;
+    Ok(format!(
+        "data:image/png;base64,{}",
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, png)
+    ))
 }
 
 fn format_image_error(error: ImageError) -> String {
