@@ -116,6 +116,16 @@ impl DesktopHost for WindowsDesktop {
 impl WindowsDesktop {
     fn apply_layout(&mut self, monitors: &[Monitor]) -> Result<(), String> {
         self.sync_assignments(monitors)?;
+        // Heal layers destroyed when Windows reshuffles the desktop shell.
+        let dead: Vec<String> = self
+            .slots
+            .iter()
+            .filter(|(_, slot)| !win32::layer_is_alive(slot.layer.hwnd))
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in dead {
+            self.remove_slot(&id)?;
+        }
         let changes = diff_monitors(&self.monitors, monitors);
         for change in changes {
             match change {
@@ -125,6 +135,12 @@ impl WindowsDesktop {
                     self.remove_slot(monitor.id().as_str())?;
                     self.add_slot(&monitor)?;
                 }
+            }
+        }
+        // Re-attach any monitor that lost its layer but did not change geometry.
+        for monitor in monitors {
+            if !self.slots.contains_key(monitor.id().as_str()) {
+                self.add_slot(monitor)?;
             }
         }
         self.monitors = monitors.to_vec();
@@ -204,13 +220,47 @@ impl WindowsDesktop {
         monitor_id: &str,
         wallpaper: &WallpaperSource,
     ) -> Result<(), String> {
-        let Some(slot) = self.slots.get_mut(monitor_id) else {
-            return Ok(());
-        };
+        if self
+            .slots
+            .get(monitor_id)
+            .is_some_and(|slot| !win32::layer_is_alive(slot.layer.hwnd))
+        {
+            self.recreate_slot(monitor_id)?;
+        }
         let image = resolve_image(wallpaper, &self.samples)?;
-        slot.gpu.present_static(&image)?;
-        slot.wallpaper = wallpaper.clone();
+        let present_result = {
+            let Some(slot) = self.slots.get_mut(monitor_id) else {
+                return Ok(());
+            };
+            slot.gpu.present_static(&image)
+        };
+        if let Err(error) = present_result {
+            // Surface lost after another app took the GPU / DWM reshuffled.
+            self.recreate_slot(monitor_id)?;
+            let slot = self
+                .slots
+                .get_mut(monitor_id)
+                .ok_or_else(|| format!("slot missing after recreate: {error}"))?;
+            let image = resolve_image(wallpaper, &self.samples)?;
+            slot.gpu.present_static(&image)?;
+        }
+        if let Some(slot) = self.slots.get_mut(monitor_id) {
+            slot.wallpaper = wallpaper.clone();
+        }
         write_monitor_stats(&self.monitors, &self.slots);
+        Ok(())
+    }
+
+    fn recreate_slot(&mut self, monitor_id: &str) -> Result<(), String> {
+        let monitor = self
+            .monitors
+            .iter()
+            .find(|monitor| monitor.id().as_str() == monitor_id)
+            .cloned();
+        self.remove_slot(monitor_id)?;
+        if let Some(monitor) = monitor {
+            self.add_slot(&monitor)?;
+        }
         Ok(())
     }
 }
@@ -398,22 +448,32 @@ fn schedule_hotplug_resync<R: Runtime>(app: AppHandle<R>) {
             if !win32::take_display_changed() {
                 continue;
             }
-            let mut host = match DESKTOP.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            let Some(desktop) = host.as_mut() else {
-                break;
-            };
-            match WindowsMonitorSource.monitors() {
-                Ok(monitors) => {
-                    if let Err(error) = desktop.apply_layout(&monitors) {
-                        eprintln!("monitor resync failed: {error}");
-                    } else {
-                        emit_monitors_changed(&app, &monitors);
-                    }
+            let path = std::env::temp_dir().join("background-customizer-hotplug.txt");
+            let _ = std::fs::write(&path, "resync_begin\n");
+            // Rebuild wallpaper surfaces on the UI thread — creating/destroying
+            // wgpu HWND surfaces from this worker crashes when Windows reshuffles
+            // the desktop (fullscreen apps, show-desktop, shell refresh).
+            let app_for_job = app.clone();
+            let (tx, rx) = std::sync::mpsc::channel();
+            if let Err(error) = app_for_job.run_on_main_thread(move || {
+                let result = resync_desktop_layout();
+                let _ = tx.send(result);
+            }) {
+                let _ = std::fs::write(&path, format!("queue_failed:{error}\n"));
+                continue;
+            }
+            match rx.recv() {
+                Ok(Ok(monitors)) => {
+                    let _ = std::fs::write(&path, format!("resync_ok:{}\n", monitors.len()));
+                    emit_monitors_changed(&app, &monitors);
                 }
-                Err(error) => eprintln!("monitor enumeration failed: {error}"),
+                Ok(Err(error)) => {
+                    let _ = std::fs::write(&path, format!("resync_err:{error}\n"));
+                    eprintln!("monitor resync failed: {error}");
+                }
+                Err(error) => {
+                    let _ = std::fs::write(&path, format!("resync_recv:{error}\n"));
+                }
             }
         });
     }
@@ -421,6 +481,21 @@ fn schedule_hotplug_resync<R: Runtime>(app: AppHandle<R>) {
     {
         let _ = app;
     }
+}
+
+#[cfg(windows)]
+fn resync_desktop_layout() -> Result<Vec<Monitor>, String> {
+    let mut host = DESKTOP
+        .lock()
+        .map_err(|_| "desktop host lock poisoned".to_string())?;
+    let Some(desktop) = host.as_mut() else {
+        return Err("desktop host is not attached".to_string());
+    };
+    let monitors = WindowsMonitorSource
+        .monitors()
+        .map_err(|error| error.to_string())?;
+    desktop.apply_layout(&monitors)?;
+    Ok(monitors)
 }
 
 fn write_present_stats(presents: &PresentCounter, label: &str) {

@@ -16,9 +16,10 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, FindWindowExW, FindWindowW,
-    GetClientRect, GetMessageW, GetParent, GetWindowLongPtrW, RegisterClassW, SendMessageTimeoutW,
-    SetLayeredWindowAttributes, SetParent, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-    TranslateMessage, CS_HREDRAW, CS_VREDRAW, GWL_EXSTYLE, GWL_STYLE, HCURSOR, HICON, HWND_MESSAGE,
+    GetClientRect, GetMessageW, GetParent, GetWindowLongPtrW, IsWindow, RegisterClassW,
+    SendMessageTimeoutW, SetLayeredWindowAttributes, SetParent, SetWindowLongPtrW, SetWindowPos,
+    ShowWindow, TranslateMessage, CS_HREDRAW, CS_VREDRAW, GWL_EXSTYLE, GWL_STYLE, HCURSOR, HICON,
+    HWND_MESSAGE,
     LWA_ALPHA, MONITORINFOF_PRIMARY, MSG, SMTO_NORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE,
     SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_SHOWNOACTIVATE, WM_DESTROY,
     WM_DISPLAYCHANGE, WM_DPICHANGED, WM_ERASEBKGND, WM_PAINT, WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS,
@@ -162,7 +163,17 @@ pub(super) fn attach_monitor_layer(monitor: &NativeMonitor) -> Result<DesktopSur
 
 pub(super) fn destroy_layer(raw: isize) -> Result<(), String> {
     let hwnd = hwnd_from_raw(raw)?;
+    if !unsafe { IsWindow(Some(hwnd)) }.as_bool() {
+        return Ok(());
+    }
     unsafe { DestroyWindow(hwnd) }.map_err(|error| format!("DestroyWindow failed: {error}"))
+}
+
+pub(super) fn layer_is_alive(raw: isize) -> bool {
+    match hwnd_from_raw(raw) {
+        Ok(hwnd) => unsafe { IsWindow(Some(hwnd)) }.as_bool(),
+        Err(_) => false,
+    }
 }
 
 pub(super) fn start_display_change_watcher() -> Result<(), String> {
@@ -616,6 +627,12 @@ unsafe extern "system" fn layer_window_proc(
             let mut paint = windows::Win32::Graphics::Gdi::PAINTSTRUCT::default();
             let _hdc = unsafe { windows::Win32::Graphics::Gdi::BeginPaint(hwnd, &mut paint) };
             let _ = unsafe { windows::Win32::Graphics::Gdi::EndPaint(hwnd, &paint) };
+            LRESULT(0)
+        }
+        // Explorer/DWM sometimes destroys our Progman child when the shell
+        // reshuffles (show-desktop, fullscreen, display changes). Resync later.
+        WM_DESTROY => {
+            DISPLAY_CHANGED.store(true, Ordering::SeqCst);
             LRESULT(0)
         }
         _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },

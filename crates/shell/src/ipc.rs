@@ -170,12 +170,9 @@ pub fn apply_bootstrap_sample<R: Runtime>(app: &AppHandle<R>) -> Result<(), Stri
                 .map_err(|error| error.to_string())?;
         }
     }
+    // Setup runs before the event loop; call apply directly on this thread.
     for monitor in &monitors {
-        platform::apply_monitor_wallpaper_on_main(
-            app,
-            monitor.id().as_str().to_string(),
-            source.clone(),
-        )?;
+        platform::apply_monitor_wallpaper(monitor.id().as_str(), &source)?;
     }
     let config = persist_and_publish(app, store.inner())?;
     let marker = std::env::temp_dir().join("background-customizer-bootstrap.txt");
